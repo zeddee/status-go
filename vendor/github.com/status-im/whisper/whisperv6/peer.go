@@ -212,6 +212,7 @@ func (peer *Peer) broadcast() error {
 	envelopes := peer.host.Envelopes()
 	bundle := make([]*Envelope, 0, len(envelopes))
 	for _, envelope := range envelopes {
+		log.Info("adding envelope to a bundle", "hash", envelope.Hash(), "peer", peer.peer.ID().String())
 		if !peer.marked(envelope) && envelope.PoW() >= peer.powRequirement && peer.bloomMatch(envelope) {
 			bundle = append(bundle, envelope)
 		}
@@ -235,6 +236,7 @@ func (peer *Peer) broadcast() error {
 			if peer.confirmationsEnabled {
 				event.Batch = batchHash
 			}
+			log.Info("sending envelope to a feed", "hash", event.Hash, "peer", peer.peer.ID().String(), "batch", event.Batch)
 			peer.host.envelopeFeed.Send(event)
 		}
 

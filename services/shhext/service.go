@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/node"
 	"github.com/ethereum/go-ethereum/p2p"
 	"github.com/ethereum/go-ethereum/p2p/enode"
@@ -98,6 +99,10 @@ func New(w *whisper.Whisper, handler EnvelopeEventsHandler, db *leveldb.DB, conf
 
 // UpdateMailservers updates information about selected mail servers.
 func (s *Service) UpdateMailservers(nodes []*enode.Node) error {
+	log.Info("-------------------- start updating mail servers")
+	for _, n := range nodes {
+		log.Info("updating mail servers with", "node", n.String())
+	}
 	if err := s.peerStore.Update(nodes); err != nil {
 		return err
 	}

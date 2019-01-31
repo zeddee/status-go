@@ -109,6 +109,7 @@ func (t *tracker) handleEvent(event whisper.EnvelopeEvent) {
 }
 
 func (t *tracker) handleEventEnvelopeSent(event whisper.EnvelopeEvent) {
+	log.Info("event before processing", "hash", event.Hash, "peer", event.Peer, "batch", event.Batch)
 	if t.mailServerConfirmation {
 		if !t.isMailserver(event.Peer) {
 			return
@@ -124,13 +125,13 @@ func (t *tracker) handleEventEnvelopeSent(event whisper.EnvelopeEvent) {
 	if !ok || state == EnvelopeSent {
 		return
 	}
-	log.Debug("envelope is sent", "hash", event.Hash, "peer", event.Peer)
+	log.Info("envelope is sent", "hash", event.Hash, "peer", event.Peer)
 	if event.Batch != (common.Hash{}) {
 		if _, ok := t.batches[event.Batch]; !ok {
 			t.batches[event.Batch] = map[common.Hash]struct{}{}
 		}
 		t.batches[event.Batch][event.Hash] = struct{}{}
-		log.Debug("waiting for a confirmation", "batch", event.Batch)
+		log.Info("waiting for a confirmation", "batch", event.Batch)
 	} else {
 		t.cache[event.Hash] = EnvelopeSent
 		if t.handler != nil {
@@ -155,9 +156,9 @@ func (t *tracker) handleAcknowledgedBatch(event whisper.EnvelopeEvent) {
 
 	envelopes, ok := t.batches[event.Batch]
 	if !ok {
-		log.Debug("batch is not found", "batch", event.Batch)
+		log.Info("batch is not found", "batch", event.Batch)
 	}
-	log.Debug("received a confirmation", "batch", event.Batch, "peer", event.Peer)
+	log.Info("received a confirmation", "batch", event.Batch, "peer", event.Peer)
 	for hash := range envelopes {
 		state, ok := t.cache[hash]
 		if !ok || state == EnvelopeSent {
@@ -165,6 +166,7 @@ func (t *tracker) handleAcknowledgedBatch(event whisper.EnvelopeEvent) {
 		}
 		t.cache[hash] = EnvelopeSent
 		if t.handler != nil {
+			log.Info("notified caller", "hash", hash, "peer", event.Peer)
 			t.handler.EnvelopeSent(hash)
 		}
 	}
@@ -180,7 +182,7 @@ func (t *tracker) handleEventEnvelopeExpired(event whisper.EnvelopeEvent) {
 		if state == EnvelopeSent {
 			return
 		}
-		log.Debug("envelope expired", "hash", event.Hash, "state", state)
+		log.Info("envelope expired", "hash", event.Hash, "state", state)
 		if t.handler != nil {
 			t.handler.EnvelopeExpired(event.Hash)
 		}
