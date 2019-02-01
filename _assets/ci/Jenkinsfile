@@ -10,7 +10,6 @@ pipeline {
   }
 
   options {
-    disableConcurrentBuilds()
     /* Go requires a certain directory structure */
     checkoutToSubdirectory('src/github.com/status-im/status-go')
     /* manage how many builds we keep */
@@ -40,12 +39,7 @@ pipeline {
     stage('Build') {
       parallel {
         stage('Android') {
-          agent { label 'linux' }
-
           environment {
-            STATUS_PATH = 'src/github.com/status-im/status-go'
-            GOPATH = "${env.WORKSPACE}"
-            PATH = "${env.PATH}:${env.GOPATH}/bin"
             ANDROID_HOME = '/usr/lib/android-sdk'
             ANDROID_SDK_ROOT = '/usr/lib/android-sdk'
             ANDROID_NDK = '/usr/lib/android-ndk'
@@ -65,19 +59,18 @@ pipeline {
               sh 'make setup-build'
             } } }
 
-            //stage('Lint') { steps { dir(env.STATUS_PATH) {
+            //stage('Test') { steps { dir(env.STATUS_PATH) {
             //  sh 'make ci'
             //} } }
 
             stage('Compile') { steps { dir(env.STATUS_PATH) {
+              sh 'ls -l build/bin'
               sh 'make statusgo-android'
               sh "cp build/bin/statusgo.aar ${destAndroid}/status-go-android-${lib.suffix()}.aar"
             } } }
 
             stage('Archive') { steps {
-              stash(name: 'android', includes: "${env.STATUS_PATH}/build/bin/statusgo.aar")
               archiveArtifacts("pkg-android/status-go-android-${lib.suffix()}.aar")
-              stash(name: 'android', includes: "${env.STATUS_PATH}/build/bin/statusgo.aar")
             } }
 
             stage('Upload') { steps { script {
@@ -112,7 +105,7 @@ pipeline {
               sh 'make setup-build'
             } } }
 
-            //stage('Lint') { steps { dir(env.STATUS_PATH) {
+            //stage('Test') { steps { dir(env.STATUS_PATH) {
             //  sh 'make ci'
             //} } }
 
@@ -125,8 +118,8 @@ pipeline {
             } } }
 
             stage('Archive') { steps {
-              dir("${env.STATUS_PATH}/build/bin") {
-                stash(name: 'ios', includes: 'status-go-ios.zip')
+              dir("${env.STATUS_PATH}/build/bin/Statusgo.framework") {
+                stash(name: 'ios', includes: '**')
               }
               archiveArtifacts("pkg-ios/status-go-ios-${lib.suffix()}.zip")
             } }
@@ -142,12 +135,6 @@ pipeline {
         } // stage(iOS)
 
         stage('Desktop') {
-          agent { label 'linux' }
-
-          environment {
-            STATUS_PATH = 'src/github.com/status-im/status-go'
-          }
-
           stages {
             stage('Prep') {
               steps { script {
@@ -180,20 +167,7 @@ pipeline {
     stage('Release') { when { expression { params.RELEASE == true } }
       steps {
         dir(env.STATUS_PATH) {
-          sh "mkdir -p ${env.STATUS_PATH}/build/bin"
-
-          dir("build/bin") {
-            unstash 'ios' // zip file
-            sh 'yes | unzip status-go-ios.zip'
-            sh 'pwd'
-            sh 'ls'
-            unstash 'android'
-          }
-
-          sh 'pwd'
-          sh 'ls'
-          sh 'ls build/bin'
-
+          unstash 'ios'
           sh 'make prepare-release'
           withCredentials([[
             $class: 'UsernamePasswordMultiBinding',
