@@ -162,6 +162,22 @@ func (s *Service) initProtocol(address, encKey, password string) error {
 		os.Remove(v4Path)
 	}
 
+	// Fix desktop using network specific directory
+	desktopPath := filepath.Join(s.dataDir, "ethereum", "mainnet_rpc", fmt.Sprintf("%s.v4.db", s.installationID))
+
+	_, err := os.Stat(desktopPath)
+
+	if err != nil && !os.IsNotExist(err) {
+		return err
+	}
+
+	// Rename file if there
+	if err == nil {
+		if err = os.Rename(desktopPath, v4Path); err != nil {
+			return err
+		}
+	}
+
 	persistence, err := chat.NewSQLLitePersistence(v4Path, encKey)
 	if err != nil {
 		return err
