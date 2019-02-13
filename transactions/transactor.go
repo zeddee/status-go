@@ -9,6 +9,7 @@ import (
 
 	ethereum "github.com/ethereum/go-ethereum"
 	gethcommon "github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/log"
@@ -160,31 +161,29 @@ func (t *Transactor) SendTransactionWithSignature(args SendTxArgs, sig []byte) (
 	return signedTx.Hash(), nil
 }
 
-func (t *Transactor) HashTransaction(args SendTxArgs) (hash gethcommon.Hash, err error) {
+func (t *Transactor) HashTransaction(args SendTxArgs) (validatedArgs SendTxArgs, hash gethcommon.Hash, err error) {
 	if !args.Valid() {
-		return hash, ErrInvalidSendTxArgs
+		return validatedArgs, hash, ErrInvalidSendTxArgs
 	}
 
+	validatedArgs = args
+
 	t.addrLock.LockAddr(args.From)
+	defer func() {
+		t.addrLock.UnlockAddr(args.From)
+	}()
+
 	var localNonce uint64
 	if val, ok := t.localNonce.Load(args.From); ok {
 		localNonce = val.(uint64)
 	}
-	var nonce uint64
-	defer func() {
-		// nonce should be incremented only if tx completed without error
-		// if upstream node returned nonce higher than ours we will stick to it
-		if err == nil {
-			t.localNonce.Store(args.From, nonce+1)
-		}
-		t.addrLock.UnlockAddr(args.From)
 
-	}()
+	var nonce uint64
 	ctx, cancel := context.WithTimeout(context.Background(), t.rpcCallTimeout)
 	defer cancel()
 	nonce, err = t.pendingNonceProvider.PendingNonceAt(ctx, args.From)
 	if err != nil {
-		return hash, err
+		return validatedArgs, hash, err
 	}
 	// if upstream node returned nonce higher than ours we will use it, as it probably means
 	// that another client was used for sending transactions
@@ -197,7 +196,7 @@ func (t *Transactor) HashTransaction(args SendTxArgs) (hash gethcommon.Hash, err
 		defer cancel()
 		gasPrice, err = t.gasCalculator.SuggestGasPrice(ctx)
 		if err != nil {
-			return hash, err
+			return validatedArgs, hash, err
 		}
 	}
 
@@ -216,7 +215,7 @@ func (t *Transactor) HashTransaction(args SendTxArgs) (hash gethcommon.Hash, err
 			Data:     args.GetInput(),
 		})
 		if err != nil {
-			return hash, err
+			return validatedArgs, hash, err
 		}
 		if gas < defaultGas {
 			t.log.Info("default gas will be used because estimated is lower", "estimated", gas, "default", defaultGas)
@@ -225,6 +224,13 @@ func (t *Transactor) HashTransaction(args SendTxArgs) (hash gethcommon.Hash, err
 	} else {
 		gas = uint64(*args.Gas)
 	}
+
+	newNonce := hexutil.Uint64(nonce)
+	newGas := hexutil.Uint64(gas)
+
+	validatedArgs.Nonce = &newNonce
+	validatedArgs.GasPrice = (*hexutil.Big)(gasPrice)
+	validatedArgs.Gas = &newGas
 
 	var tx *types.Transaction
 	if args.To != nil {
@@ -235,7 +241,7 @@ func (t *Transactor) HashTransaction(args SendTxArgs) (hash gethcommon.Hash, err
 			"GasPrice", gasPrice,
 			"Value", value,
 		)
-		tx = types.NewTransaction(nonce, *args.To, value, gas, gasPrice, args.GetInput())
+		tx = types.NewTransaction(nonce, *validatedArgs.To, value, gas, gasPrice, validatedArgs.GetInput())
 	} else {
 		// contract creation is rare enough to log an expected address
 		t.log.Info("New contract",
@@ -245,12 +251,12 @@ func (t *Transactor) HashTransaction(args SendTxArgs) (hash gethcommon.Hash, err
 			"Value", value,
 			"Contract address", crypto.CreateAddress(args.From, nonce),
 		)
-		tx = types.NewContractCreation(nonce, value, gas, gasPrice, args.GetInput())
+		tx = types.NewContractCreation(nonce, value, gas, gasPrice, validatedArgs.GetInput())
 	}
 
 	hash = types.NewEIP155Signer(chainID).Hash(tx)
 
-	return hash, nil
+	return validatedArgs, hash, nil
 }
 
 // make sure that only account which created the tx can complete it
